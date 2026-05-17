@@ -721,11 +721,9 @@ export default function App() {
                       days={days}
                       snapshot={getSnapshotTime()}
                       theme={theme}
-                      onExport={() => exportChartAsImage("chart-cn", `CN_TechPulse_${days}d.png`)}
                       labels={{
                         period: t.period,
-                        snapshot: t.snapshot,
-                        downloadImage: t.downloadImage
+                        snapshot: t.snapshot
                       }}
                     />
                     <RegionChart 
@@ -737,11 +735,9 @@ export default function App() {
                       days={days}
                       snapshot={getSnapshotTime()}
                       theme={theme}
-                      onExport={() => exportChartAsImage("chart-us", `US_TechPulse_${days}d.png`)}
                       labels={{
                         period: t.period,
-                        snapshot: t.snapshot,
-                        downloadImage: t.downloadImage
+                        snapshot: t.snapshot
                       }}
                     />
                   </div>
@@ -792,7 +788,7 @@ export default function App() {
   );
 }
 
-function RegionChart({ id, title, data, color, sub, days, snapshot, theme, onExport, labels }: { 
+function RegionChart({ id, title, data, color, sub, days, snapshot, theme, labels }: { 
   id: string,
   title: string, 
   data: Keyword[], 
@@ -801,8 +797,7 @@ function RegionChart({ id, title, data, color, sub, days, snapshot, theme, onExp
   days: number, 
   snapshot: string,
   theme: 'light' | 'dark',
-  onExport: () => void,
-  labels: { period: string, snapshot: string, downloadImage: string }
+  labels: { period: string, snapshot: string }
 }) {
   const chartData = [...data].sort((a, b) => b.score - a.score);
 
@@ -872,21 +867,6 @@ function RegionChart({ id, title, data, color, sub, days, snapshot, theme, onExp
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      </div>
-
-      <div className="flex justify-end pt-4 border-t border-current/10" style={{ borderColor: `${color}20` }}>
-        <button 
-          onClick={onExport}
-          className={cn(
-            "flex items-center gap-2 px-6 py-2.5 border font-bold uppercase text-[12px] tracking-widest transition-all active:scale-95 shadow-md",
-            theme === 'light' 
-              ? "border-[#141414] text-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0]" 
-              : "border-white text-white hover:bg-white hover:text-[#141414]"
-          )}
-        >
-          <ImageIcon className="w-4 h-4" />
-          {labels.downloadImage}
-        </button>
       </div>
     </div>
   );
