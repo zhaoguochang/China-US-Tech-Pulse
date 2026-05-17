@@ -33,6 +33,9 @@ const SOURCES = {
     { name: "VentureBeat", url: "https://venturebeat.com/feed/" },
     { name: "CNET", url: "https://www.cnet.com/rss/news/" },
     { name: "Mashable", url: "https://mashable.com/feeds/rss/all" },
+    { name: "ZDNet", url: "https://www.zdnet.com/news/rss.xml" },
+    { name: "9to5Mac", url: "https://9to5mac.com/feed/" },
+    { name: "Forbes Tech", url: "https://www.forbes.com/technology/feed/" },
   ],
   CN: [
     { name: "36Kr", url: "https://36kr.com/feed" },
@@ -42,7 +45,9 @@ const SOURCES = {
     { name: "Solidot", url: "https://www.solidot.org/index.rss" },
     { name: "iFanr", url: "https://www.ifanr.com/feed" },
     { name: "SSPAI", url: "https://sspai.com/feed" },
-    { name: "Zhihu Daily", url: "https://feeds.feedburner.com/zhihu-daily" },
+    { name: "CNBeta", url: "https://www.cnbeta.com.tw/backend.php" },
+    { name: "GeekPark", url: "https://www.geekpark.net/rss" },
+    { name: "The Paper Tech", url: "https://www.thepaper.cn/rss_news.jsp?nodeid=25961" },
   ],
 };
 
@@ -65,7 +70,7 @@ async function getFeedItems(urls: string[]) {
   results.forEach((result) => {
     if (result.status === 'fulfilled' && result.value) {
       const feed = result.value;
-      allItems.push(...feed.items.slice(0, 40).map(item => ({
+      allItems.push(...feed.items.slice(0, 60).map(item => ({
         title: item.title,
         link: item.link,
         pubDate: item.pubDate,
@@ -159,8 +164,8 @@ app.get("/api/pulse", async (req, res) => {
     const filteredCN = filterByDate(cnArticles);
 
     // 3. Prepare prompt for Gemini
-    const usText = filteredUS.slice(0, 60).map(a => a.title).join("\n");
-    const cnText = filteredCN.slice(0, 60).map(a => a.title).join("\n");
+    const usText = filteredUS.slice(0, 200).map(a => a.title).join("\n");
+    const cnText = filteredCN.slice(0, 200).map(a => a.title).join("\n");
 
     const prompt = `
       Analyze the following tech news titles from the US and China from the last ${days} days.
@@ -243,8 +248,8 @@ app.get("/api/pulse", async (req, res) => {
     const responseData = {
       analysis,
       articles: {
-        us: filteredUS.slice(0, 50),
-        cn: filteredCN.slice(0, 50),
+        us: filteredUS,
+        cn: filteredCN,
       },
       counts: {
         us: filteredUS.length,

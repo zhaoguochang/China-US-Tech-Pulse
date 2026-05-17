@@ -104,8 +104,6 @@ const translations = {
     timeRange: "Time Range",
     last24h: "Last 24h",
     last3d: "Last 3d",
-    last7d: "Last 7d",
-    custom: "Custom",
     cancel: "Stop",
     daysUnit: "days",
     basedOn: "Based on {n} reports",
@@ -147,8 +145,6 @@ const translations = {
     timeRange: "时间范围",
     last24h: "最近 24 小时",
     last3d: "最近 3 天",
-    last7d: "最近 7 天",
-    custom: "自定义",
     cancel: "停止",
     daysUnit: "天",
     basedOn: "基于 {n} 篇报道",
@@ -173,8 +169,6 @@ export default function App() {
   const [days, setDays] = useState<number>(1);
   const [view, setView] = useState<"analysis" | "charts">("analysis");
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [showCustomRange, setShowCustomRange] = useState(false);
-  const [customDays, setCustomDays] = useState("14");
   const abortControllerRef = useRef<AbortController | null>(null);
   const dataCache = useRef<Record<string, PulseData>>({});
 
@@ -192,58 +186,43 @@ export default function App() {
     }
   };
 
-  const handleCustomRangeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const d = parseInt(customDays);
-    if (!isNaN(d) && d > 0) {
-      setDays(d);
-      setShowCustomRange(false);
-    }
-  };
-
   const downloadCSV = () => {
     if (!data) return;
 
     const timestamp = new Date().toISOString().split('T')[0];
+    let csvContent = "\uFEFF"; // UTF-8 BOM
 
-    // 1. Keywords CSV
-    let keywordsCsv = "\uFEFF"; // UTF-8 BOM
-    keywordsCsv += "Region,Keyword,Importance Score (1-100),Mention Count (Approx)\n";
+    // 1. Keywords Section
+    csvContent += "SECTION: KEYWORDS ANALYSIS\n";
+    csvContent += "Region,Keyword,Importance Score (1-100),Mention Count (Approx)\n";
     data.analysis.us.keywords.forEach(k => {
-      keywordsCsv += `US,"${k.word.replace(/"/g, '""')}",${k.score},${k.mentionCount}\n`;
+      csvContent += `US,"${k.word.replace(/"/g, '""')}",${k.score},${k.mentionCount}\n`;
     });
     data.analysis.cn.keywords.forEach(k => {
-      keywordsCsv += `CN,"${k.word.replace(/"/g, '""')}",${k.score},${k.mentionCount}\n`;
+      csvContent += `CN,"${k.word.replace(/"/g, '""')}",${k.score},${k.mentionCount}\n`;
     });
 
-    const keywordsBlob = new Blob([keywordsCsv], { type: 'text/csv;charset=utf-8;' });
-    const keywordsUrl = URL.createObjectURL(keywordsBlob);
-    const keywordsLink = document.createElement('a');
-    keywordsLink.href = keywordsUrl;
-    keywordsLink.download = `TechPulse_Keywords_${timestamp}_${days}d.csv`;
-    keywordsLink.click();
-    URL.revokeObjectURL(keywordsUrl);
+    csvContent += "\n\n";
 
-    // 2. Articles CSV (Source Data)
-    let articlesCsv = "\uFEFF"; // UTF-8 BOM
-    articlesCsv += "Region,Title,Link,Publication Date\n";
+    // 2. Source Articles Section
+    csvContent += "SECTION: SOURCE ARTICLES (Links included)\n";
+    csvContent += "Region,Title,Link,Publication Date\n";
     data.articles.us.forEach(a => {
-      articlesCsv += `US,"${a.title.replace(/"/g, '""')}",${a.link},${a.pubDate}\n`;
+      csvContent += `US,"${a.title.replace(/"/g, '""')}","${(a.link || '').replace(/"/g, '""')}","${(a.pubDate || '').replace(/"/g, '""')}"\n`;
     });
     data.articles.cn.forEach(a => {
-      articlesCsv += `CN,"${a.title.replace(/"/g, '""')}",${a.link},${a.pubDate}\n`;
+      csvContent += `CN,"${a.title.replace(/"/g, '""')}","${(a.link || '').replace(/"/g, '""')}","${(a.pubDate || '').replace(/"/g, '""')}"\n`;
     });
 
-    const articlesBlob = new Blob([articlesCsv], { type: 'text/csv;charset=utf-8;' });
-    const articlesUrl = URL.createObjectURL(articlesBlob);
-    const articlesLink = document.createElement('a');
-    articlesLink.href = articlesUrl;
-    articlesLink.download = `TechPulse_Sources_${timestamp}_${days}d.csv`;
-    // Slight delay to ensure first download starts
-    setTimeout(() => {
-      articlesLink.click();
-      URL.revokeObjectURL(articlesUrl);
-    }, 100);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `GlobalTechPulse_Data_${timestamp}_${days}d.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const copyToClipboard = async () => {
@@ -266,10 +245,10 @@ export default function App() {
     csv += "SECTION: SOURCE ARTICLES\n";
     csv += "Region,Title,Link,Publication Date\n";
     data.articles.cn.forEach(a => {
-      csv += `CN,"${a.title.replace(/"/g, '""')}",${a.link},${a.pubDate}\n`;
+      csv += `CN,"${a.title.replace(/"/g, '""')}","${(a.link || '').replace(/"/g, '""')}","${(a.pubDate || '').replace(/"/g, '""')}"\n`;
     });
     data.articles.us.forEach(a => {
-      csv += `US,"${a.title.replace(/"/g, '""')}",${a.link},${a.pubDate}\n`;
+      csv += `US,"${a.title.replace(/"/g, '""')}","${(a.link || '').replace(/"/g, '""')}","${(a.pubDate || '').replace(/"/g, '""')}"\n`;
     });
 
     try {
@@ -473,7 +452,7 @@ export default function App() {
               "hidden lg:flex items-center rounded-sm p-1 border shrink-0 transition-colors",
               theme === "light" ? "bg-[#141414]/5 border-[#141414]/10" : "bg-white/5 border-white/10"
             )}>
-              {[1, 3, 7].map((d) => (
+              {[1, 3].map((d) => (
                 <button
                   key={d}
                   onClick={() => setDays(d)}
@@ -484,54 +463,9 @@ export default function App() {
                       : "opacity-50 hover:opacity-100"
                   )}
                 >
-                  {d === 1 ? t.last24h : d === 3 ? t.last3d : t.last7d}
+                  {d === 1 ? t.last24h : t.last3d}
                 </button>
               ))}
-              <div className="relative">
-                <button
-                  onClick={() => setShowCustomRange(!showCustomRange)}
-                  className={cn(
-                    "px-3 py-1 text-[10px] font-bold uppercase transition-all flex items-center gap-1",
-                    (![1, 3, 7].includes(days) || showCustomRange)
-                      ? (theme === "light" ? "bg-[#141414] text-[#E4E3E0]" : "bg-[#E4E3E0] text-[#141414]")
-                      : "opacity-50 hover:opacity-100"
-                  )}
-                >
-                  <Calendar className="w-3 h-3" />
-                  {![1, 3, 7].includes(days) ? `${days}${t.daysUnit}` : t.custom}
-                </button>
-                <AnimatePresence>
-                  {showCustomRange && (
-                    <motion.form
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      onSubmit={handleCustomRangeSubmit}
-                      className={cn(
-                        "absolute top-full right-0 mt-2 p-4 shadow-2xl z-[60] flex flex-col gap-2 rounded-sm border",
-                        theme === "light" ? "bg-[#141414] text-[#E4E3E0] border-[#E4E3E0]/10" : "bg-[#E4E3E0] text-[#141414] border-[#141414]/10"
-                      )}
-                    >
-                      <label className="text-[9px] uppercase font-bold tracking-widest opacity-50">{t.custom} ({t.daysUnit})</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="number" 
-                          value={customDays}
-                          onChange={(e) => setCustomDays(e.target.value)}
-                          className={cn(
-                            "border px-2 py-1 text-xs outline-none w-20",
-                            theme === "light" ? "bg-[#E4E3E0]/10 border-[#E4E3E0]/20" : "bg-[#141414]/10 border-[#141414]/20"
-                          )}
-                        />
-                        <button type="submit" className={cn(
-                          "px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors",
-                          theme === "light" ? "bg-[#E4E3E0] text-[#141414]" : "bg-[#141414] text-[#E4E3E0]"
-                        )}>OK</button>
-                      </div>
-                    </motion.form>
-                  )}
-                </AnimatePresence>
-              </div>
             </div>
 
             <div className="flex items-center gap-1">
