@@ -57,7 +57,8 @@ interface Keyword {
 
 interface RegionAnalysis {
   keywords: Keyword[];
-  summary: string;
+  summary_zh: string;
+  summary_en: string;
 }
 
 interface PulseData {
@@ -180,9 +181,7 @@ export default function App() {
   const t = translations[lang];
 
   const toggleLang = () => {
-    const newLang = lang === "en" ? "zh" : "en";
-    setLang(newLang);
-    // fetchData will be triggered by useEffect
+    setLang(prev => prev === "en" ? "zh" : "en");
   };
 
   const handleCancel = () => {
@@ -353,10 +352,10 @@ export default function App() {
     return `${start.toLocaleString(fmt, opt)} - ${now.toLocaleString(fmt, opt)}`;
   };
 
-  const fetchData = async (currentLang: "en" | "zh", currentDays: number) => {
-    const cacheKey = `${currentLang}_${currentDays}`;
+  const fetchData = async (currentDays: number) => {
+    const cacheKey = `pulse_${currentDays}`;
     
-    // Client-side cache check
+    // Client-side cache check (Language agnostic)
     if (dataCache.current[cacheKey]) {
       setData(dataCache.current[cacheKey]);
       setLoading(false);
@@ -375,7 +374,7 @@ export default function App() {
     setError(null);
     
     try {
-      const res = await fetch(`/api/pulse?lang=${currentLang}&days=${currentDays}`, {
+      const res = await fetch(`/api/pulse?days=${currentDays}`, {
         signal: controller.signal
       });
       
@@ -398,7 +397,6 @@ export default function App() {
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.log('Pulse scan cancelled by user');
-        // Loading state is handled in handleCancel for explicit stop
       } else {
         console.error("Fetch Error:", err);
         setError(err.message || "Connection lost with the pulse engine");
@@ -412,8 +410,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchData(lang, days);
-  }, [lang, days]);
+    fetchData(days);
+  }, [days]);
 
   return (
     <div className={cn(
@@ -674,6 +672,7 @@ export default function App() {
                   <RegionColumn 
                     title={t.cnTitle} 
                     sub={t.cnSub}
+                    lang={lang}
                     analysis={data.analysis.cn}
                     articles={data.articles.cn.slice(0, 20)}
                     count={data.counts.cn}
@@ -690,6 +689,7 @@ export default function App() {
                   <RegionColumn 
                     title={t.usTitle} 
                     sub={t.usSub}
+                    lang={lang}
                     analysis={data.analysis.us}
                     articles={data.articles.us.slice(0, 20)}
                     count={data.counts.us}
@@ -875,6 +875,7 @@ function RegionChart({ id, title, data, color, sub, days, snapshot, theme, label
 function RegionColumn({ 
   title, 
   sub, 
+  lang,
   analysis, 
   articles, 
   count, 
@@ -884,6 +885,7 @@ function RegionColumn({
 }: { 
   title: string, 
   sub: string, 
+  lang: "en" | "zh",
   analysis: RegionAnalysis, 
   articles: Article[],
   count: number,
@@ -930,7 +932,7 @@ function RegionColumn({
           <span className="text-[10px] font-bold tracking-widest">{labels.aiSummary}</span>
         </div>
         <p className="text-lg font-serif leading-relaxed italic mb-8">
-          {analysis.summary}
+          {lang === "zh" ? analysis.summary_zh : analysis.summary_en}
         </p>
         
         <div className="flex flex-wrap gap-2">

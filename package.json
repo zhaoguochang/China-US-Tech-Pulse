@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "global-tech-pulse",
   "private": true,
-  "version": "0.0.0",
+  "description": "Strategic Insight Bridge: Mapping Tech Trends between China and the US with AI.",
+  "version": "1.0.0",
   "type": "module",
   "author": "Guochang Zhao <guochang.zhao81@gmail.com>",
   "scripts": {

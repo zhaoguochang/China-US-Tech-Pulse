@@ -6,7 +6,6 @@ Strategic Insight Bridge: Mapping Tech Trends between China and the US with AI.
 - **Real-time Pulse**: Aggregates top tech news feeds from major US and Chinese media.
 - **AI Analysis**: Uses Gemini 3.0 to extract keywords, trend scores, and provide strategic summaries.
 - **Data Visualization**: Comparison charts using Recharts for visual trend analysis.
-- **Snapshot Export**: Download analysis charts as high-quality PNG images.
 - **Data Portability**: Export keyword data as CSV for further research.
 - **Bilingual Interface**: Seamlessly switch between Chinese and English.
 

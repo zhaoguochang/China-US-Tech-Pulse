@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -109,24 +110,23 @@ async function generateWithRetry(prompt: any, schema: any, maxRetries = 3) {
 }
 
 app.get("/api/pulse", async (req, res) => {
-  const lang = req.query.lang || "zh";
   const days = parseInt(req.query.days as string) || 7;
-  const cacheKey = `${lang}_${days}`;
+  const cacheKey = `pulse_${days}`;
 
-  // 1. Check Cache First
+  // 1. Check Cache First (Agnostic of lang)
   if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
-    console.log(`Serving from cache for key: ${cacheKey}`);
+    console.log(`Serving from shared cache for days: ${days}`);
     return res.json(cache[cacheKey].data);
   }
 
   // 2. Deduplicate In-Flight Requests
   if (inFlightRequests[cacheKey]) {
-    console.log(`Deduplicating request for key: ${cacheKey}`);
+    console.log(`Deduplicating shared request for days: ${days}`);
     try {
       const result = await inFlightRequests[cacheKey];
       return res.json(result);
     } catch (err) {
-      // If the tracked request failed, we continue and try a new one
+      // If the tracked request failed, we continue
     }
   }
 
@@ -136,8 +136,6 @@ app.get("/api/pulse", async (req, res) => {
     req.on("close", () => {
       isCancelled = true;
     });
-
-    const languageName = lang === "zh" ? "Chinese" : "English";
 
     // 1. Fetch RSS Feeds
     const [usArticles, cnArticles] = await Promise.all([
@@ -168,13 +166,12 @@ app.get("/api/pulse", async (req, res) => {
       Analyze the following tech news titles from the US and China from the last ${days} days.
       1. Extract the top 10 keywords/topics for each region based on frequency and significance.
       2. For each keyword, provide:
-         - "word": the keyword/entity representation.
-           * For China: Use "中文 (英文)" format (e.g., "人工智能 (Artificial Intelligence)").
-           * For US: Use "English (Chinese)" format (e.g., "Artificial Intelligence (人工智能)").
-         - "score": an importance/trend score (1-100).
-         - "mentionCount": the frequency of this topic in the news list.
-      3. Provide a brief summary of the current focus (max 120 words per region).
-      IMPORTANT: Return all text in ${languageName} except for the bilingual keyword formatting specified above.
+         - "word": keyword representation (Use bilingual format: "中文 (英文)" for China, "English (Chinese)" for US).
+         - "score": importance/trend score (1-100).
+         - "mentionCount": frequency of this topic.
+      3. For each region, provide two summaries:
+         - "summary_zh": A brief summary in Chinese (max 150 characters).
+         - "summary_en": A brief summary in English (max 120 words).
       Return the data in a strict JSON format.
 
       US News Titles:
@@ -202,9 +199,10 @@ app.get("/api/pulse", async (req, res) => {
                 required: ["word", "score", "mentionCount"]
               } 
             },
-            summary: { type: Type.STRING },
+            summary_zh: { type: Type.STRING },
+            summary_en: { type: Type.STRING },
           },
-          required: ["keywords", "summary"],
+          required: ["keywords", "summary_zh", "summary_en"],
         },
         cn: {
           type: Type.OBJECT,
@@ -221,9 +219,10 @@ app.get("/api/pulse", async (req, res) => {
                 required: ["word", "score", "mentionCount"]
               } 
             },
-            summary: { type: Type.STRING },
+            summary_zh: { type: Type.STRING },
+            summary_en: { type: Type.STRING },
           },
-          required: ["keywords", "summary"],
+          required: ["keywords", "summary_zh", "summary_en"],
         },
       },
       required: ["us", "cn"],
