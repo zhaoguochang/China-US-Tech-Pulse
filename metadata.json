@@ -1,0 +1,6 @@
+{
+  "name": "Global Tech Pulse",
+  "description": "Scrape and analyze tech trends across China and the US using Gemini AI and RSS feeds.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
