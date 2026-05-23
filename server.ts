@@ -114,12 +114,143 @@ async function generateWithRetry(prompt: any, schema: any, maxRetries = 3) {
   throw lastError;
 }
 
-app.get("/api/pulse", async (req, res) => {
-  const days = parseInt(req.query.days as string) || 7;
+async function performPulseCrawl(days: number) {
   const cacheKey = `pulse_${days}`;
 
-  // 1. Check Cache First (Agnostic of lang)
-  if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
+  // 1. Fetch RSS Feeds
+  const [usArticles, cnArticles] = await Promise.all([
+    getFeedItems(SOURCES.US.map(s => s.url)),
+    getFeedItems(SOURCES.CN.map(s => s.url)),
+  ]);
+
+  // 2. Filter by date
+  const now = new Date();
+  const filterByDate = (articles: any[]) => articles.filter(a => {
+    if (!a.pubDate) return true;
+    const pubDate = new Date(a.pubDate);
+    const diffTime = Math.abs(now.getTime() - pubDate.getTime());
+    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    return diffDays <= days;
+  });
+
+  const filteredUS = filterByDate(usArticles);
+  const filteredCN = filterByDate(cnArticles);
+
+  // 3. Prepare prompt for Gemini
+  const usText = filteredUS.slice(0, 200).map(a => a.title).join("\n");
+  const cnText = filteredCN.slice(0, 200).map(a => a.title).join("\n");
+
+  const prompt = `
+    Analyze the following tech news titles from the US and China from the last ${days} days.
+    1. Extract the top 10 keywords/topics for each region based on frequency and significance.
+    2. For each keyword, provide:
+       - "word": keyword representation (Use bilingual format: "中文 (英文)" for China, "English (Chinese)" for US).
+       - "score": importance/trend score (1-100).
+       - "mentionCount": frequency of this topic.
+    3. For each region, provide two summaries:
+       - "summary_zh": A brief summary in Chinese (max 150 characters).
+       - "summary_en": A brief summary in English (max 120 words).
+    Return the data in a strict JSON format.
+
+    US News Titles:
+    ${usText || "No recent news found."}
+
+    China News Titles:
+    ${cnText || "No recent news found."}
+  `;
+
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      us: {
+        type: Type.OBJECT,
+        properties: {
+          keywords: { 
+            type: Type.ARRAY, 
+            items: { 
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                score: { type: Type.NUMBER },
+                mentionCount: { type: Type.NUMBER }
+              },
+              required: ["word", "score", "mentionCount"]
+            } 
+          },
+          summary_zh: { type: Type.STRING },
+          summary_en: { type: Type.STRING },
+        },
+        required: ["keywords", "summary_zh", "summary_en"],
+      },
+      cn: {
+        type: Type.OBJECT,
+        properties: {
+          keywords: { 
+            type: Type.ARRAY, 
+            items: { 
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                score: { type: Type.NUMBER },
+                mentionCount: { type: Type.NUMBER }
+              },
+              required: ["word", "score", "mentionCount"]
+            } 
+          },
+          summary_zh: { type: Type.STRING },
+          summary_en: { type: Type.STRING },
+        },
+        required: ["keywords", "summary_zh", "summary_en"],
+      },
+    },
+    required: ["us", "cn"],
+  };
+
+  const response = (await generateWithRetry(prompt, schema)) as any;
+
+  let analysis;
+  try {
+    analysis = JSON.parse(response.text || "{}");
+  } catch (e) {
+    throw new Error("Failed to parse analysis data from AI");
+  }
+
+  const responseData = {
+    analysis,
+    articles: {
+      us: filteredUS,
+      cn: filteredCN,
+    },
+    counts: {
+      us: filteredUS.length,
+      cn: filteredCN.length
+    }
+  };
+
+  // Save to cache
+  cache[cacheKey] = {
+    data: responseData,
+    timestamp: Date.now()
+  };
+
+  return responseData;
+}
+
+app.get("/api/pulse", async (req, res) => {
+  const days = parseInt(req.query.days as string) || 7;
+  const isRefresh = req.query.refresh === "true";
+  const cacheKey = `pulse_${days}`;
+
+  // 1. Check if we should use Cache
+  // For 24h view (days = 1), as long as cache exists, we serve it (unless user explicitly refreshes).
+  // For 3 days view, we bypass long cache and fetch fresh, but allow a 5-second safety debounce cache.
+  const useCache = !isRefresh && (
+    days === 1 
+      ? !!cache[cacheKey] 
+      : (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < 5000))
+  );
+
+  if (useCache) {
     console.log(`Serving from shared cache for days: ${days}`);
     return res.json(cache[cacheKey].data);
   }
@@ -135,138 +266,7 @@ app.get("/api/pulse", async (req, res) => {
     }
   }
 
-  // 3. Create a new request process
-  const fetchPulseData = async () => {
-    let isCancelled = false;
-    req.on("close", () => {
-      isCancelled = true;
-    });
-
-    // 1. Fetch RSS Feeds
-    const [usArticles, cnArticles] = await Promise.all([
-      getFeedItems(SOURCES.US.map(s => s.url)),
-      getFeedItems(SOURCES.CN.map(s => s.url)),
-    ]);
-
-    if (isCancelled) throw new Error("Request cancelled");
-
-    // 2. Filter by date
-    const now = new Date();
-    const filterByDate = (articles: any[]) => articles.filter(a => {
-      if (!a.pubDate) return true;
-      const pubDate = new Date(a.pubDate);
-      const diffTime = Math.abs(now.getTime() - pubDate.getTime());
-      const diffDays = diffTime / (1000 * 60 * 60 * 24);
-      return diffDays <= days;
-    });
-
-    const filteredUS = filterByDate(usArticles);
-    const filteredCN = filterByDate(cnArticles);
-
-    // 3. Prepare prompt for Gemini
-    const usText = filteredUS.slice(0, 200).map(a => a.title).join("\n");
-    const cnText = filteredCN.slice(0, 200).map(a => a.title).join("\n");
-
-    const prompt = `
-      Analyze the following tech news titles from the US and China from the last ${days} days.
-      1. Extract the top 10 keywords/topics for each region based on frequency and significance.
-      2. For each keyword, provide:
-         - "word": keyword representation (Use bilingual format: "中文 (英文)" for China, "English (Chinese)" for US).
-         - "score": importance/trend score (1-100).
-         - "mentionCount": frequency of this topic.
-      3. For each region, provide two summaries:
-         - "summary_zh": A brief summary in Chinese (max 150 characters).
-         - "summary_en": A brief summary in English (max 120 words).
-      Return the data in a strict JSON format.
-
-      US News Titles:
-      ${usText || "No recent news found."}
-
-      China News Titles:
-      ${cnText || "No recent news found."}
-    `;
-
-    const schema = {
-      type: Type.OBJECT,
-      properties: {
-        us: {
-          type: Type.OBJECT,
-          properties: {
-            keywords: { 
-              type: Type.ARRAY, 
-              items: { 
-                type: Type.OBJECT,
-                properties: {
-                  word: { type: Type.STRING },
-                  score: { type: Type.NUMBER },
-                  mentionCount: { type: Type.NUMBER }
-                },
-                required: ["word", "score", "mentionCount"]
-              } 
-            },
-            summary_zh: { type: Type.STRING },
-            summary_en: { type: Type.STRING },
-          },
-          required: ["keywords", "summary_zh", "summary_en"],
-        },
-        cn: {
-          type: Type.OBJECT,
-          properties: {
-            keywords: { 
-              type: Type.ARRAY, 
-              items: { 
-                type: Type.OBJECT,
-                properties: {
-                  word: { type: Type.STRING },
-                  score: { type: Type.NUMBER },
-                  mentionCount: { type: Type.NUMBER }
-                },
-                required: ["word", "score", "mentionCount"]
-              } 
-            },
-            summary_zh: { type: Type.STRING },
-            summary_en: { type: Type.STRING },
-          },
-          required: ["keywords", "summary_zh", "summary_en"],
-        },
-      },
-      required: ["us", "cn"],
-    };
-
-    // 4. Gemini Analysis
-    const response = (await generateWithRetry(prompt, schema)) as any;
-
-    if (isCancelled) throw new Error("Request cancelled");
-
-    let analysis;
-    try {
-      analysis = JSON.parse(response.text || "{}");
-    } catch (e) {
-      throw new Error("Failed to parse analysis data from AI");
-    }
-
-    const responseData = {
-      analysis,
-      articles: {
-        us: filteredUS,
-        cn: filteredCN,
-      },
-      counts: {
-        us: filteredUS.length,
-        cn: filteredCN.length
-      }
-    };
-
-    // Save to cache
-    cache[cacheKey] = {
-      data: responseData,
-      timestamp: Date.now()
-    };
-
-    return responseData;
-  };
-
-  const pulsePromise = fetchPulseData();
+  const pulsePromise = performPulseCrawl(days);
   inFlightRequests[cacheKey] = pulsePromise;
 
   try {
@@ -291,6 +291,53 @@ app.get("/api/pulse", async (req, res) => {
   }
 });
 
+function getMsUntil9AMBeijing() {
+  const now = new Date();
+  const tzOffset = 8 * 60; // Beijing time zone offset (UTC+8) in minutes
+  const nowUtc = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+  const nowBeijing = new Date(nowUtc + (tzOffset * 60 * 1000));
+  
+  const targetBeijing = new Date(nowBeijing);
+  targetBeijing.setHours(9, 0, 0, 0);
+  
+  if (nowBeijing.getTime() >= targetBeijing.getTime()) {
+    targetBeijing.setDate(targetBeijing.getDate() + 1);
+  }
+  
+  return targetBeijing.getTime() - nowBeijing.getTime();
+}
+
+function scheduleDailyCrawl() {
+  const msToNext9AM = getMsUntil9AMBeijing();
+  const minsToNext12 = Math.round(msToNext9AM / 1000 / 60);
+  console.log(`[Scheduler] Next daily 24h background crawl scheduled in ${minsToNext12} minutes (approx ${(minsToNext12 / 60).toFixed(1)} hours) at Beijing Time 09:00 AM.`);
+  
+  setTimeout(async () => {
+    console.log(`[Scheduler] Triggering scheduled daily background crawl for 24h view (Beijing Time 09:00 AM)...`);
+    try {
+      await performPulseCrawl(1);
+      console.log(`[Scheduler] Daily 24h background crawl successfully completed and cached.`);
+    } catch (error: any) {
+      console.error(`[Scheduler] Daily background crawl failed:`, error.message || error);
+    }
+    // Schedule the next daily one
+    scheduleDailyCrawl();
+  }, msToNext9AM);
+}
+
+async function warmUpCache() {
+  const cacheKey = "pulse_1";
+  if (!cache[cacheKey]) {
+    console.log("[Scheduler] Indexing 24h data on server startup to warm up cache...");
+    try {
+      await performPulseCrawl(1);
+      console.log("[Scheduler] Cache warmed up successfully on startup.");
+    } catch (error: any) {
+      console.warn("[Scheduler] Cache warming failed on startup (will fetch on demand):", error.message || error);
+    }
+  }
+}
+
 async function start() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -308,6 +355,9 @@ async function start() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    // Warm up cache and start daily scheduler (non-blocking)
+    warmUpCache();
+    scheduleDailyCrawl();
   });
 }
 

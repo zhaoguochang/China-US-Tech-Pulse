@@ -331,11 +331,11 @@ export default function App() {
     return `${start.toLocaleString(fmt, opt)} - ${now.toLocaleString(fmt, opt)}`;
   };
 
-  const fetchData = async (currentDays: number) => {
+  const fetchData = async (currentDays: number, forceRefresh = false) => {
     const cacheKey = `pulse_${currentDays}`;
     
     // Client-side cache check (Language agnostic)
-    if (dataCache.current[cacheKey]) {
+    if (!forceRefresh && dataCache.current[cacheKey]) {
       setData(dataCache.current[cacheKey]);
       setLoading(false);
       setError(null);
@@ -353,7 +353,7 @@ export default function App() {
     setError(null);
     
     try {
-      const res = await fetch(`/api/pulse?days=${currentDays}`, {
+      const res = await fetch(`/api/pulse?days=${currentDays}${forceRefresh ? '&refresh=true' : ''}`, {
         signal: controller.signal
       });
       
@@ -537,7 +537,7 @@ export default function App() {
               </button>
             ) : (
               <button 
-                onClick={() => fetchData(lang, days)}
+                onClick={() => fetchData(days, true)}
                 className={cn(
                   "flex items-center gap-2 px-5 py-2 border transition-all active:scale-95 disabled:opacity-50 font-bold text-[11px] tracking-widest",
                   theme === "light" ? "border-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0]" : "border-[#E4E3E0] hover:bg-[#E4E3E0] hover:text-[#141414]"
@@ -586,7 +586,7 @@ export default function App() {
                 <p className="text-sm font-mono opacity-80 leading-relaxed">{error}</p>
               </div>
               <button 
-                onClick={() => fetchData(lang, days)} 
+                onClick={() => fetchData(days, true)} 
                 className={cn(
                   "px-8 py-3 font-bold uppercase text-[10px] tracking-[0.2em] transition-all active:scale-95",
                   theme === 'light' ? "bg-red-900 text-white" : "bg-red-500 text-white"
